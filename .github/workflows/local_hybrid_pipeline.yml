@@ -1,0 +1,117 @@
+    name: Local Hybrid Optimization Pipeline (Mac Runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "ci (fast) or full"
+        required: true
+        default: "ci"
+        type: choice
+        options: [ci, full]
+  push:
+    branches: ["main", "master"]
+
+jobs:
+  baseline_prune_finetune_mps:
+    name: Baseline + Prune + Finetune (MPS)
+    runs-on: [self-hosted, macos, mps]
+    timeout-minutes: 999
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python (use your local, or use actions/setup-python if available)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Baseline train (MPS)
+        run: |
+          if [ "${{ inputs.mode }}" = "full" ]; then E=25; else E=5; fi
+          python train.py --arch resnet18 --epochs $E --batch_size 256 \
+            --out checkpoints/baseline.pt --device mps
+
+      - name: Baseline eval + benchmark (MPS)
+        run: |
+          python evaluate.py  --ckpt checkpoints/baseline.pt --device mps --log results.csv
+          python benchmark.py --ckpt checkpoints/baseline.pt --device mps --log results.csv
+
+      - name: Structural pruning (MPS)
+        run: |
+          python prune.py --in_ckpt checkpoints/baseline.pt --out checkpoints/pruned.pt \
+            --prune_ratio 0.6 --device mps
+
+      - name: Finetune pruned (MPS)
+        run: |
+          if [ "${{ inputs.mode }}" = "full" ]; then E=10; else E=3; fi
+          python train.py --resume checkpoints/pruned.pt --epochs $E --batch_size 256 \
+            --out checkpoints/pruned_ft.pt --device mps
+
+      - name: Pruned eval + benchmark (MPS)
+        run: |
+          python evaluate.py  --ckpt checkpoints/pruned_ft.pt --device mps --log results.csv
+          python benchmark.py --ckpt checkpoints/pruned_ft.pt --device mps --log results.csv
+
+      - name: Upload intermediate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mps-stage-artifacts
+          path: |
+            checkpoints/baseline.pt
+            checkpoints/pruned.pt
+            checkpoints/pruned_ft.pt
+            results.csv
+
+  qat_int8_cpu:
+    name: QAT INT8 + Bench (CPU)
+    runs-on: [self-hosted, macos, mps]
+    needs: baseline_prune_finetune_mps
+    timeout-minutes: 999
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download artifacts from MPS stage
+        uses: actions/download-artifact@v4
+        with:
+          name: mps-stage-artifacts
+          path: .
+
+      - name: QAT optimize (CPU)
+        run: |
+          if [ "${{ inputs.mode }}" = "full" ]; then E=8; else E=3; fi
+          python qat.py --in_ckpt checkpoints/pruned_ft.pt --out checkpoints/pruned_qat_int8.pt \
+            --epochs $E --batch_size 256 --device cpu
+
+      - name: INT8 eval + benchmark (CPU)
+        run: |
+          python evaluate.py  --ckpt checkpoints/pruned_qat_int8.pt --device cpu --log results.csv
+          python benchmark.py --ckpt checkpoints/pruned_qat_int8.pt --device cpu --log results.csv
+          echo "---- results.csv ----"
+          cat results.csv || true
+
+      - name: Upload final artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-hybrid-artifacts
+          path: |
+            checkpoints/pruned_qat_int8.pt
+            results.csv
