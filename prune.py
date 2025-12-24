@@ -67,8 +67,8 @@ def main():
             idxs = idxs[: max(0, conv.out_channels - 1)]
         if not idxs:
             continue
-        plan = DG.get_pruning_plan(conv, tp.prune_conv_out_channels, idxs=idxs)
-        plan.exec()
+        group = DG.get_pruning_group(conv, tp.prune_conv_out_channels, idxs=idxs)
+        group.prune()
         total_pruned += len(idxs)
 
     save_ckpt(args.out, model, arch, extra={"prune_ratio": args.prune_ratio, "channels_pruned": total_pruned})
