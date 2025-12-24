@@ -8,18 +8,14 @@ on:
         required: true
         default: "ci"
         type: choice
-        options:
-          - ci
-          - full
+        options: [ci, full]
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 jobs:
   baseline_prune_finetune_mps:
     name: Baseline + Prune + Finetune (MPS)
-    runs-on: [self-hosted]
+    runs-on: self-hosted
     timeout-minutes: 999
     env:
       MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'ci' }}
@@ -27,36 +23,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install deps
+      - name: Create venv + install deps
+        shell: bash
         run: |
+          python3 --version
+          python3 -m venv .venv
+          source .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Baseline train (MPS)
+        shell: bash
         run: |
+          source .venv/bin/activate
           if [ "$MODE" = "full" ]; then E=25; else E=5; fi
           python train.py --arch resnet18 --epochs $E --batch_size 256 --out checkpoints/baseline.pt --device mps
 
       - name: Baseline eval + benchmark (MPS)
+        shell: bash
         run: |
+          source .venv/bin/activate
           python evaluate.py  --ckpt checkpoints/baseline.pt --device mps --log results.csv
           python benchmark.py --ckpt checkpoints/baseline.pt --device mps --log results.csv
 
       - name: Structural pruning (MPS)
+        shell: bash
         run: |
+          source .venv/bin/activate
           python prune.py --in_ckpt checkpoints/baseline.pt --out checkpoints/pruned.pt --prune_ratio 0.6 --device mps
 
       - name: Finetune pruned (MPS)
+        shell: bash
         run: |
+          source .venv/bin/activate
           if [ "$MODE" = "full" ]; then E=10; else E=3; fi
           python train.py --resume checkpoints/pruned.pt --epochs $E --batch_size 256 --out checkpoints/pruned_ft.pt --device mps
 
       - name: Pruned eval + benchmark (MPS)
+        shell: bash
         run: |
+          source .venv/bin/activate
           python evaluate.py  --ckpt checkpoints/pruned_ft.pt --device mps --log results.csv
           python benchmark.py --ckpt checkpoints/pruned_ft.pt --device mps --log results.csv
 
@@ -71,7 +77,7 @@ jobs:
 
   qat_int8_cpu:
     name: QAT INT8 + Bench (CPU)
-    runs-on: [self-hosted]
+    runs-on: self-hosted
     needs: baseline_prune_finetune_mps
     timeout-minutes: 999
     env:
@@ -80,12 +86,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install deps
+      - name: Create venv + install deps
+        shell: bash
         run: |
+          python3 --version
+          python3 -m venv .venv
+          source .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
@@ -95,12 +101,16 @@ jobs:
           path: .
 
       - name: QAT optimize (CPU)
+        shell: bash
         run: |
+          source .venv/bin/activate
           if [ "$MODE" = "full" ]; then E=8; else E=3; fi
           python qat.py --in_ckpt checkpoints/pruned_ft.pt --out checkpoints/pruned_qat_int8.pt --epochs $E --batch_size 256 --device cpu
 
       - name: INT8 eval + benchmark (CPU)
+        shell: bash
         run: |
+          source .venv/bin/activate
           python evaluate.py  --ckpt checkpoints/pruned_qat_int8.pt --device cpu --log results.csv
           python benchmark.py --ckpt checkpoints/pruned_qat_int8.pt --device cpu --log results.csv
           echo "---- results.csv ----"
