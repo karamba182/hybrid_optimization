@@ -40,8 +40,15 @@ def main():
     model = build_model(args.arch).to(device)
 
     if args.resume:
-        payload = load_ckpt(args.resume, device=device)
-        model.load_state_dict(payload["state_dict"], strict=True)
+        payload = torch.load(args.resume, map_location="cpu")
+
+        # pruned checkpoint format: {"model": nn.Module, ...}
+        if isinstance(payload, dict) and "model" in payload:
+            model = payload["model"].to(device)
+        else:
+            # baseline/old format: {"state_dict": ...}
+            payload = load_ckpt(args.resume, device=device)
+            model.load_state_dict(payload["state_dict"], strict=True)
 
     criterion = nn.CrossEntropyLoss()
     optim = SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.wd, nesterov=True)

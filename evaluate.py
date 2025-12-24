@@ -13,10 +13,19 @@ def main():
     device = torch.device(args.device)
     _, testloader = get_dataloaders(batch_size=256)
 
-    payload = load_ckpt(args.ckpt, device="cpu")
-    arch = payload.get("arch", "resnet18")
-    model = build_model(arch).to(device)
-    model.load_state_dict(payload["state_dict"], strict=True)
+    raw = torch.load(args.ckpt, map_location="cpu")
+
+    # Format A: pruned checkpoint with full model
+    if isinstance(raw, dict) and "model" in raw:
+        model = raw["model"].to(device)
+        arch = raw.get("arch", "pruned")
+    else:
+        # Format B: classic checkpoint with state_dict
+        payload = load_ckpt(args.ckpt, device="cpu")
+        arch = payload.get("arch", "resnet18")
+        model = build_model(arch).to(device)
+        model.load_state_dict(payload["state_dict"], strict=True)
+
     model.eval()
 
     acc = accuracy(model, testloader, device)

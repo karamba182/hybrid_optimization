@@ -69,9 +69,13 @@ def main():
             continue
         group = DG.get_pruning_group(conv, tp.prune_conv_out_channels, idxs=idxs)
         group.prune()
+        torch.save(
+            {"model": model.cpu(), "arch": arch, "prune_ratio": args.prune_ratio, "channels_pruned": total_pruned},
+            args.out
+        )
+        print(f"Pruned channels: {total_pruned}  Saved: {args.out}")
         total_pruned += len(idxs)
 
-    save_ckpt(args.out, model, arch, extra={"prune_ratio": args.prune_ratio, "channels_pruned": total_pruned})
     print(f"Pruned channels: {total_pruned}  Saved: {args.out}")
 
 if __name__ == "__main__":
