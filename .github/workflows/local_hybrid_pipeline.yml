@@ -19,7 +19,7 @@ on:
 jobs:
   baseline_prune_finetune_mps:
     name: Baseline + Prune + Finetune (MPS)
-    runs-on: [self-hosted, macos, mps]
+    runs-on: [self-hosted]
     timeout-minutes: 999
     env:
       MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'ci' }}
@@ -71,7 +71,7 @@ jobs:
 
   qat_int8_cpu:
     name: QAT INT8 + Bench (CPU)
-    runs-on: [self-hosted, macos, mps]
+    runs-on: [self-hosted]
     needs: baseline_prune_finetune_mps
     timeout-minutes: 999
     env:
