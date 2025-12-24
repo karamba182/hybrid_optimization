@@ -66,7 +66,7 @@ def save_ckpt(path, model, arch, extra=None):
     payload = {"arch": arch, "state_dict": model.state_dict()}
     if extra:
         payload["extra"] = extra
-    torch.save(payload, path)
+    torch.save(payload, path, _use_new_zipfile_serialization=False)
 
 def load_ckpt(path, device="cpu"):
     payload = torch.load(path, map_location=device)
